@@ -1,0 +1,204 @@
+﻿<Window x:Class="CHAT_WITH_FREND.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:CHAT_WITH_FREND"
+        mc:Ignorable="d"
+        Title="Chat Client" Height="600" Width="800"
+        WindowStartupLocation="CenterScreen"
+        Background="#F5F5F5">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Connection Status -->
+        <Border Grid.Row="0" Background="White" CornerRadius="5" Padding="10" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Trạng thái: " FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBlock x:Name="StatusText" Text="Chưa kết nối" VerticalAlignment="Center" 
+                           Foreground="Red" FontWeight="Bold"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Messages ListBox -->
+        <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1" 
+                CornerRadius="5" Background="White" Margin="0,0,0,10">
+            <ListBox x:Name="MessagesListBox" 
+                     BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="8,4" 
+                                   FontSize="16" Foreground="#333333"
+                                   FontFamily="Segoe UI Emoji, Segoe UI"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <!-- Emoji Panel (Collapsible) - Hiển thị phía trên thanh nhập -->
+        <Border x:Name="EmojiPanel" Grid.Row="2" 
+                Background="White" BorderBrush="#CCCCCC" BorderThickness="1"
+                CornerRadius="5" Padding="10" Margin="0,0,0,10"
+                Visibility="Collapsed"
+                MaxHeight="200"
+                VerticalAlignment="Top">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Chọn emoji" FontWeight="Bold" FontSize="13" 
+                               Foreground="#333333" VerticalAlignment="Center"/>
+                    <Button x:Name="CloseEmojiButton" Grid.Column="1"
+                            Content="✕" Width="25" Height="25"
+                            FontSize="12" FontWeight="Bold"
+                            Background="Transparent" Foreground="#666666"
+                            BorderThickness="0" Cursor="Hand"
+                            Click="CloseEmojiButton_Click"
+                            ToolTip="Đóng">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#F0F0F0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+                <ScrollViewer Grid.Row="1" 
+                              HorizontalScrollBarVisibility="Auto" 
+                              VerticalScrollBarVisibility="Auto"
+                              MaxHeight="160">
+                    <WrapPanel x:Name="EmojiContainer" Orientation="Horizontal">
+                        <!-- Emoji sẽ được thêm bằng code -->
+                    </WrapPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- Message Input Area -->
+        <Grid Grid.Row="3" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Emoji Button -->
+            <Button x:Name="EmojiButton" Grid.Column="0"
+                    Content="😀" Width="40" Height="35"
+                    FontSize="18"
+                    Background="#FFC107" Foreground="White"
+                    BorderThickness="0" Cursor="Hand"
+                    Margin="0,0,5,0"
+                    Click="EmojiButton_Click"
+                    ToolTip="Chọn emoji">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Background" Value="#FFC107"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FFB300"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            
+            <TextBox x:Name="MessageTextBox" Grid.Column="1" 
+                     Height="35" VerticalContentAlignment="Center"
+                     Padding="10,0"
+                     FontSize="16"
+                     FontFamily="Segoe UI Emoji, Segoe UI"
+                     KeyDown="MessageTextBox_KeyDown"
+                     BorderBrush="#CCCCCC"
+                     BorderThickness="1"
+                     Margin="0,0,5,0"/>
+            <Button x:Name="SendButton" Grid.Column="2" 
+                    Content="Gửi" Width="100" Height="35"
+                    FontSize="14" FontWeight="Bold"
+                    Background="#4CAF50" Foreground="White"
+                    BorderThickness="0" Cursor="Hand"
+                    Click="SendButton_Click">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Background" Value="#4CAF50"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#45a049"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#CCCCCC"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </Grid>
+
+        <!-- Connection Controls -->
+        <Border Grid.Row="4" Background="White" CornerRadius="5" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Server IP:" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="SemiBold"/>
+                <TextBox x:Name="ServerIPTextBox" Grid.Column="1" 
+                         Text="127.0.0.1" Height="30" 
+                         VerticalContentAlignment="Center"
+                         Padding="5,0"
+                         BorderBrush="#CCCCCC"
+                         BorderThickness="1"
+                         Margin="0,0,10,0"
+                         ToolTip="Nhập IP của server. Ví dụ: 127.0.0.1 (localhost) hoặc IP của máy chạy server (ví dụ: 192.168.1.100)"/>
+                <TextBlock Text="Port:" Grid.Column="2" 
+                           VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="SemiBold"/>
+                <TextBox x:Name="PortTextBox" Grid.Column="3" 
+                         Text="8888" Width="70" Height="30"
+                         VerticalContentAlignment="Center"
+                         Padding="5,0"
+                         BorderBrush="#CCCCCC"
+                         BorderThickness="1"
+                         Margin="0,0,10,0"/>
+                <Button x:Name="ConnectButton" Grid.Column="4" 
+                        Content="Kết nối" Width="120" Height="30"
+                        FontSize="13" FontWeight="Bold"
+                        Background="#2196F3" Foreground="White"
+                        BorderThickness="0" Cursor="Hand"
+                        Click="ConnectButton_Click">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="#2196F3"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#1976D2"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
