@@ -5,10 +5,12 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         mc:Ignorable="d"
-        Title="LAN Chat" Height="650" Width="950" 
-        WindowStartupLocation="CenterScreen">
+        Title="LAN Chat" Height="650" Width="950"
+        WindowStartupLocation="CenterScreen"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
 
     <Window.Resources>
+        <!-- Giữ nguyên các PathGeometry cũ của bạn, nhưng sẽ bọc Viewbox ở dưới -->
         <PathGeometry x:Key="IconSend">M2.01 21L23 12 2.01 3 2 10l15 2-15 2z</PathGeometry>
         <PathGeometry x:Key="IconImage">M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z</PathGeometry>
         <PathGeometry x:Key="IconFile">M14,2H6C4.9,2,4,2.9,4,4v16c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2V8L14,2z M13,9V3.5L18.5,9H13z</PathGeometry>
@@ -18,9 +20,15 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Width" Value="35"/>
-            <Setter Property="Height" Value="35"/>
-            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Opacity" Value="0.9"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="1"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
 
@@ -64,7 +72,7 @@
                 <TextBlock x:Name="ChatTitleText" Text="Chat Nhóm" VerticalAlignment="Center" Margin="20,0" FontSize="16" FontWeight="Bold"/>
             </Border>
 
-            <ListBox x:Name="MessagesListBox" Grid.Row="1" Background="#EFEFEF" BorderThickness="0" 
+            <ListBox x:Name="MessagesListBox" Grid.Row="1" Background="#EFEFEF" BorderThickness="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
@@ -73,14 +81,12 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-
                             <Border Grid.Row="0" Background="White" CornerRadius="8" Padding="10,8" HorizontalAlignment="Left" MaxWidth="550">
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="5" Color="#DDD" ShadowDepth="1" Opacity="0.4"/>
                                 </Border.Effect>
                                 <ContentControl Content="{Binding Content}"/>
                             </Border>
-
                             <TextBlock Grid.Row="1" Text="{Binding Timestamp}" FontSize="10" Foreground="#888" Margin="5,2,0,0"/>
                         </Grid>
                     </DataTemplate>
@@ -89,10 +95,9 @@
 
             <Border Grid.Row="2" Background="White" BorderBrush="#E0E0E0" BorderThickness="0,1,0,0">
                 <StackPanel>
-
                     <Border x:Name="PreviewBorder" Visibility="Collapsed" Background="#F0F0F0" Padding="10" Margin="10,10,10,0" CornerRadius="5">
                         <DockPanel>
-                            <Button DockPanel.Dock="Right" Content="✕" Width="20" Height="20" Background="Transparent" 
+                            <Button DockPanel.Dock="Right" Content="✕" Width="20" Height="20" Background="Transparent"
                                     BorderThickness="0" Foreground="Red" Click="RemoveAttachment_Click" VerticalAlignment="Top"/>
                             <StackPanel Orientation="Horizontal">
                                 <Image x:Name="PreviewImage" Height="60" Margin="0,0,10,0" Stretch="Uniform"/>
@@ -101,7 +106,7 @@
                         </DockPanel>
                     </Border>
 
-                    <Grid Margin="5">
+                    <Grid Margin="8,4,8,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
@@ -110,41 +115,63 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
+                        <!-- Attach Image -->
                         <Button Grid.Column="0" Style="{StaticResource IconBtn}" Click="AttachImage_Click" ToolTip="Gửi ảnh">
-                            <Path Data="{StaticResource IconImage}" Fill="#0091FF" Width="22" Height="22"/>
+                            <Viewbox Width="26" Height="26">
+                                <Path Data="{StaticResource IconImage}" Fill="#0091FF" Stretch="Uniform"/>
+                            </Viewbox>
                         </Button>
 
+                        <!-- Attach File -->
                         <Button Grid.Column="1" Style="{StaticResource IconBtn}" Click="AttachFile_Click" ToolTip="Gửi file">
-                            <Path Data="{StaticResource IconFile}" Fill="#555" Width="18" Height="22"/>
+                            <Viewbox Width="26" Height="26">
+                                <Path Data="{StaticResource IconFile}" Fill="#666666" Stretch="Uniform"/>
+                            </Viewbox>
                         </Button>
 
+                        <!-- Emoji -->
                         <Button x:Name="EmojiButton" Grid.Column="2" Style="{StaticResource IconBtn}" Click="ToggleEmoji_Click" ToolTip="Biểu cảm">
-                            <Path Data="{StaticResource IconEmoji}" Fill="#FFC107" Width="22" Height="22"/>
+                            <Viewbox Width="26" Height="26">
+                                <Path Data="{StaticResource IconEmoji}" Fill="#FFB300" Stretch="Uniform"/>
+                            </Viewbox>
                         </Button>
 
-                        <Popup x:Name="EmojiPopup" 
-                               PlacementTarget="{Binding ElementName=EmojiButton}" 
-                               Placement="Top" 
-                               StaysOpen="False" 
-                               AllowsTransparency="True" 
-                               PopupAnimation="Fade">
-                            <Border Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="8">
+                        <Popup x:Name="EmojiPopup"
+       PlacementTarget="{Binding ElementName=EmojiButton}"
+       Placement="Top"
+       StaysOpen="False"
+       AllowsTransparency="True"
+       PopupAnimation="Fade">
+                            <Border Background="White"
+            BorderBrush="#E0E0E0"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="0"
+            Margin="0">
                                 <Border.Effect>
-                                    <DropShadowEffect BlurRadius="15" Color="#B0B0B0" ShadowDepth="3" Opacity="0.5"/>
+                                    <DropShadowEffect BlurRadius="12"
+                              Color="#B0B0B0"
+                              ShadowDepth="2"
+                              Opacity="0.4"/>
                                 </Border.Effect>
-                                <emoji:Picker x:Name="EmojiPicker" 
-                                              SelectionChanged="EmojiPicker_SelectionChanged" 
-                                              FontSize="24"
-                                              Width="350" Height="400"/>
+                                <emoji:Picker x:Name="EmojiPicker"
+                      SelectionChanged="EmojiPicker_SelectionChanged"
+                      FontSize="28"
+                      Width="48"
+                      Height="40"
+                      Margin="0"/>
                             </Border>
                         </Popup>
 
-                        <emoji:TextBox x:Name="MessageTextBox" Grid.Column="3" Margin="5,0" Padding="8" VerticalContentAlignment="Center"
-                                       FontSize="15" BorderThickness="0" Background="#F5F5F5" 
-                                       KeyDown="MessageTextBox_KeyDown"/>
+                        <emoji:TextBox x:Name="MessageTextBox" Grid.Column="3" Margin="8,0" Padding="12,0" VerticalContentAlignment="Center"
+                                       FontSize="15.5" BorderThickness="0" Background="#F8F9FA"
+                                       KeyDown="MessageTextBox_KeyDown" AcceptsReturn="False"/>
 
+                        <!-- Send -->
                         <Button Grid.Column="4" Style="{StaticResource IconBtn}" Click="SendButton_Click" ToolTip="Gửi">
-                            <Path Data="{StaticResource IconSend}" Fill="#0091FF" Width="24" Height="24"/>
+                            <Viewbox Width="28" Height="28">
+                                <Path Data="{StaticResource IconSend}" Fill="#0091FF" Stretch="Uniform"/>
+                            </Viewbox>
                         </Button>
                     </Grid>
                 </StackPanel>

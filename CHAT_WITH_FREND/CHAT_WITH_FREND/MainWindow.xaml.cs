@@ -1,4 +1,6 @@
-﻿using Microsoft.Win32;
+﻿using Emoji.Wpf; // Namespace cho thư viện Emoji
+using Microsoft.Win32;
+using Shared;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -6,8 +8,6 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls; // Namespace cho các control chuẩn WPF
 using System.Windows.Media.Imaging;
-using Shared;
-using Emoji.Wpf; // Namespace cho thư viện Emoji
 
 namespace CHAT_WITH_FREND
 {
@@ -49,10 +49,21 @@ namespace CHAT_WITH_FREND
         }
 
         // --- XỬ LÝ EMOJI ---
+        //private void ToggleEmoji_Click(object sender, RoutedEventArgs e)
+        //{
+        //    // Đóng/Mở Popup
+        //    EmojiPopup.IsOpen = !EmojiPopup.IsOpen;
+        //}
         private void ToggleEmoji_Click(object sender, RoutedEventArgs e)
         {
-            // Đóng/Mở Popup
+            // Toggle thủ công: nếu đang mở thì đóng, ngược lại mở
             EmojiPopup.IsOpen = !EmojiPopup.IsOpen;
+
+            // Optional: Nếu mở, focus vào Picker để dễ chọn emoji hơn
+            if (EmojiPopup.IsOpen)
+            {
+                EmojiPicker.Focus();
+            }
         }
 
         private void EmojiPicker_SelectionChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -69,8 +80,8 @@ namespace CHAT_WITH_FREND
                 picker.Selection = string.Empty;
 
                 // Tùy chọn: Đóng popup sau khi chọn (bỏ comment nếu muốn)
-                // EmojiPopup.IsOpen = false; 
-            }
+                EmojiPopup.IsOpen = false;
+            } 
         }
 
         // --- NHẬN TIN NHẮN ---
@@ -359,3 +370,4 @@ namespace CHAT_WITH_FREND
         }
     }
 }
+
