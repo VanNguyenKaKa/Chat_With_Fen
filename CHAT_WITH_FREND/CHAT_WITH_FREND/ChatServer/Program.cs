@@ -2,15 +2,18 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using Shared; // Đảm bảo đã tham chiếu project Shared
+using Shared;
 
 namespace ChatServer
 {
     class Program
     {
         private static TcpListener? _server;
-        private static Dictionary<string, TcpClient> _connectedClients = new Dictionary<string, TcpClient>();
-        private static readonly object _lock = new object();
+        private static Dictionary<string, TcpClient> _connectedClients = new();
+        private static readonly object _lock = new();
+
+        // Track file transfers để log
+        private static Dictionary<string, (string FileName, string Sender, int TotalChunks, int ReceivedChunks)> _activeTransfers = new();
 
         static void Main(string[] args)
         {
@@ -18,6 +21,7 @@ namespace ChatServer
             _server.Start();
             Console.WriteLine("========================================");
             Console.WriteLine("SERVER STARTED ON PORT 8888");
+            Console.WriteLine("Hỗ trợ file tối đa 2GB với chunked transfer");
             Console.WriteLine("========================================");
 
             Task.Run(AcceptClients);
@@ -30,7 +34,7 @@ namespace ChatServer
             {
                 try
                 {
-                    var client = await _server.AcceptTcpClientAsync();
+                    var client = await _server!.AcceptTcpClientAsync();
                     _ = HandleClient(client);
                 }
                 catch { }
@@ -46,13 +50,11 @@ namespace ChatServer
             {
                 while (client.Connected)
                 {
-                    // 1. Đọc 4 bytes đầu tiên (Độ dài gói tin)
                     byte[] lengthBuffer = new byte[4];
                     int read = await stream.ReadAsync(lengthBuffer, 0, 4);
-                    if (read == 0) break; // Client ngắt kết nối
+                    if (read == 0) break;
                     int packetLength = BitConverter.ToInt32(lengthBuffer, 0);
 
-                    // 2. Đọc nội dung gói tin dựa trên độ dài
                     byte[] packetBuffer = new byte[packetLength];
                     int totalRead = 0;
                     while (totalRead < packetLength)
@@ -62,7 +64,6 @@ namespace ChatServer
                         totalRead += bytesRead;
                     }
 
-                    // 3. Xử lý JSON
                     string json = Encoding.UTF8.GetString(packetBuffer);
                     var packet = JsonSerializer.Deserialize<ChatPacket>(json);
 
@@ -74,31 +75,67 @@ namespace ChatServer
                             clientName = packet.Sender;
                             lock (_lock)
                             {
-                                if (_connectedClients.ContainsKey(clientName))
-                                    _connectedClients[clientName] = client;
-                                else
-                                    _connectedClients.Add(clientName, client);
+                                _connectedClients[clientName] = client;
                             }
-                            Console.WriteLine($"{clientName} joined.");
+                            Console.WriteLine($"[+] {clientName} joined.");
                             await BroadcastUserList();
                             break;
 
                         case PacketType.Message:
                         case PacketType.Image:
                         case PacketType.File:
-                            Console.WriteLine($"{packet.Sender}: {packet.Message ?? "sent a file"}");
+                            Console.WriteLine($"[MSG] {packet.Sender}: {packet.Message ?? "sent a file"}");
                             await BroadcastPacket(packet);
                             break;
 
                         case PacketType.PrivateMessage:
                             await SendPrivate(packet);
                             break;
+
+                        // ===== CHUNKED FILE TRANSFER - FORWARD TO ALL CLIENTS =====
+                        case PacketType.FileStart:
+                            Console.WriteLine($"[FILE] {packet.Sender} bắt đầu gửi '{packet.FileName}' ({FormatSize(packet.TotalFileSize)}) - {packet.TotalChunks} chunks");
+                            lock (_lock)
+                            {
+                                _activeTransfers[packet.FileId] = (packet.FileName, packet.Sender, packet.TotalChunks, 0);
+                            }
+                            // Forward đến tất cả client (hoặc private nếu có target)
+                            await ForwardFilePacket(packet);
+                            break;
+
+                        case PacketType.FileChunk:
+                            // Log progress mỗi 50 chunks
+                            lock (_lock)
+                            {
+                                if (_activeTransfers.TryGetValue(packet.FileId, out var state))
+                                {
+                                    var newState = (state.FileName, state.Sender, state.TotalChunks, state.Item4 + 1);
+                                    _activeTransfers[packet.FileId] = newState;
+
+                                    if (newState.Item4 % 50 == 0 || newState.Item4 == newState.TotalChunks)
+                                    {
+                                        double progress = (double)newState.Item4 / newState.TotalChunks * 100;
+                                        Console.WriteLine($"[FILE] {state.FileName}: {progress:F0}% ({newState.Item4}/{newState.TotalChunks})");
+                                    }
+                                }
+                            }
+                            await ForwardFilePacket(packet);
+                            break;
+
+                        case PacketType.FileEnd:
+                            Console.WriteLine($"[FILE] {packet.Sender} hoàn thành gửi '{packet.FileName}'");
+                            lock (_lock)
+                            {
+                                _activeTransfers.Remove(packet.FileId);
+                            }
+                            await ForwardFilePacket(packet);
+                            break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error with client {clientName}: {ex.Message}");
+                Console.WriteLine($"[ERROR] {clientName}: {ex.Message}");
             }
             finally
             {
@@ -106,20 +143,73 @@ namespace ChatServer
                 {
                     lock (_lock) _connectedClients.Remove(clientName);
                     await BroadcastUserList();
-                    Console.WriteLine($"{clientName} disconnected.");
+                    Console.WriteLine($"[-] {clientName} disconnected.");
                 }
                 client.Close();
             }
         }
 
+        // Forward file packets (FileStart, FileChunk, FileEnd)
+        static async Task ForwardFilePacket(ChatPacket packet)
+        {
+            if (string.IsNullOrEmpty(packet.Target) || packet.Target == "ALL")
+            {
+                // Broadcast đến tất cả (trừ người gửi)
+                await BroadcastPacketExceptSender(packet);
+            }
+            else
+            {
+                // Private - gửi đến target
+                await SendPrivate(packet);
+            }
+        }
+
+        // Broadcast cũng như SendLargeFileAsync nhưng không gửi lại cho người gửi
+        static async Task BroadcastPacketExceptSender(ChatPacket packet)
+        {
+            List<(string name, TcpClient client)> clients;
+            lock (_lock)
+            {
+                clients = _connectedClients.Select(kv => (kv.Key, kv.Value)).ToList();
+            }
+
+            foreach (var (name, client) in clients)
+            {
+                // Không gửi lại cho người gửi
+                if (name != packet.Sender)
+                {
+                    SendToClient(client, packet);
+                }
+            }
+        }
+
+        static string FormatSize(long bytes)
+        {
+            string[] sizes = ["B", "KB", "MB", "GB"];
+            double len = bytes;
+            int order = 0;
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len /= 1024;
+            }
+            return $"{len:F2} {sizes[order]}";
+        }
+
         // --- Các hàm hỗ trợ gửi tin ---
         static async Task BroadcastUserList()
         {
+            List<string> userList;
+            lock (_lock)
+            {
+                userList = _connectedClients.Keys.ToList();
+            }
+
             var listPacket = new ChatPacket
             {
                 Type = PacketType.UserList,
                 Sender = "Server",
-                Message = JsonSerializer.Serialize(_connectedClients.Keys.ToList()),
+                Message = JsonSerializer.Serialize(userList),
                 Time = DateTime.Now
             };
             await BroadcastPacket(listPacket);
@@ -127,29 +217,35 @@ namespace ChatServer
 
         static async Task BroadcastPacket(ChatPacket packet)
         {
+            List<TcpClient> clients;
             lock (_lock)
             {
-                foreach (var client in _connectedClients.Values)
-                {
-                    SendToClient(client, packet);
-                }
+                clients = _connectedClients.Values.ToList();
+            }
+
+            foreach (var client in clients)
+            {
+                SendToClient(client, packet);
             }
         }
 
         static async Task SendPrivate(ChatPacket packet)
         {
+            TcpClient? targetClient = null;
+            TcpClient? senderClient = null;
+
             lock (_lock)
             {
-                if (_connectedClients.TryGetValue(packet.Target, out TcpClient targetClient))
-                {
-                    SendToClient(targetClient, packet);
-                }
-                // Gửi lại cho người gửi để hiện lên màn hình của họ
-                if (_connectedClients.TryGetValue(packet.Sender, out TcpClient senderClient))
-                {
-                    SendToClient(senderClient, packet);
-                }
+                _connectedClients.TryGetValue(packet.Target, out targetClient);
+                _connectedClients.TryGetValue(packet.Sender, out senderClient);
             }
+
+            if (targetClient != null)
+                SendToClient(targetClient, packet);
+            
+            // Chỉ gửi lại cho sender nếu là Message/PrivateMessage (không phải file chunks)
+            if (senderClient != null && packet.Type == PacketType.PrivateMessage)
+                SendToClient(senderClient, packet);
         }
 
         static void SendToClient(TcpClient client, ChatPacket packet)
@@ -161,9 +257,12 @@ namespace ChatServer
                 byte[] length = BitConverter.GetBytes(data.Length);
 
                 NetworkStream stream = client.GetStream();
-                stream.Write(length, 0, 4); // Gửi độ dài trước
-                stream.Write(data, 0, data.Length); // Gửi nội dung sau
-                stream.Flush();
+                lock (stream) // Thread-safe write
+                {
+                    stream.Write(length, 0, 4);
+                    stream.Write(data, 0, data.Length);
+                    stream.Flush();
+                }
             }
             catch { }
         }
