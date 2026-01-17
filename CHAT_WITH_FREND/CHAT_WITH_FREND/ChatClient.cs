@@ -10,14 +10,14 @@ namespace CHAT_WITH_FREND
         private TcpClient? _client;
         private NetworkStream? _stream;
         private bool _isConnected = false;
-        private string _serverIP = "127.0.0.1";
+        private string _serverIP = "172.20.10.3";
         private int _serverPort = 8888;
 
         public event Action<string>? MessageReceived;
 
         public bool IsConnected => _isConnected;
 
-        public async Task<bool> ConnectAsync(string serverIP = "127.0.0.1", int serverPort = 8888)
+        public async Task<bool> ConnectAsync(string serverIP = "172.20.10.3", int serverPort = 8888)
         {
             try
             {
