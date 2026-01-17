@@ -1,0 +1,118 @@
+﻿<Window x:Class="CHAT_WITH_FREND.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Đăng nhập" Height="480" Width="380"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" 
+        ResizeMode="NoResize" 
+        AllowsTransparency="True" 
+        Background="Transparent"
+        MouseDown="Window_MouseDown">
+
+    <Window.Resources>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="#F5F6F7"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border CornerRadius="8" Background="{TemplateBinding Background}" Padding="2">
+                            <ScrollViewer x:Name="PART_ContentHost"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Button" x:Key="PrimaryButton">
+            <Setter Property="Background" Value="#0084FF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="20">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#0073E6"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#B0B3B8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="White" CornerRadius="15" Margin="10">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="20" ShadowDepth="5" Color="#B0B0B0" Opacity="0.4"/>
+        </Border.Effect>
+
+        <Grid>
+            <Button Content="✕" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,15,15,0"
+                    Width="30" Height="30" Background="Transparent" BorderThickness="0" 
+                    Foreground="#888" Cursor="Hand" Click="Exit_Click" FontSize="16">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="15">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <StackPanel VerticalAlignment="Center" Margin="30,20,30,20">
+                <TextBlock Text="👋" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+
+                <TextBlock Text="Xin chào!" FontSize="28" FontWeight="ExtraBold" Foreground="#333" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                <TextBlock Text="Tham gia chat cùng bạn bè" FontSize="15" Foreground="#888" HorizontalAlignment="Center" Margin="0,0,0,30"/>
+
+                <TextBlock Text="Tên hiển thị" Foreground="#65676B" FontWeight="SemiBold" Margin="5,0,0,5"/>
+                <TextBox x:Name="NameInput" Margin="0,0,0,15" Height="45"/>
+
+                <Grid Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="15"/>
+                        <ColumnDefinition Width="1*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Địa chỉ IP" Foreground="#65676B" FontWeight="SemiBold" Margin="5,0,0,5"/>
+                        <TextBox x:Name="IpInput" Text="127.0.0.1" Height="45"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Port" Foreground="#65676B" FontWeight="SemiBold" Margin="5,0,0,5"/>
+                        <TextBox x:Name="PortInput" Text="8888" HorizontalContentAlignment="Center" Height="45"/>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Height="40">
+                    <ProgressBar x:Name="LoadingBar" IsIndeterminate="True" Visibility="Collapsed" Height="4"
+                                 Foreground="#0084FF" Background="Transparent" BorderThickness="0" Margin="0,0,0,5"/>
+
+                    <TextBlock x:Name="ErrorText" Text="" Foreground="#FF3B30" FontSize="13" 
+                               HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+                </StackPanel>
+
+                <Button x:Name="BtnConnect" Content="THAM GIA NGAY" Height="50" Margin="0,10,0,0"
+                        Style="{StaticResource PrimaryButton}" Click="Button_Click"/>
+
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
