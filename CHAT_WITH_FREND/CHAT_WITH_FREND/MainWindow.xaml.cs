@@ -1,4 +1,4 @@
-﻿using Emoji.Wpf; // Namespace cho thư viện Emoji
+﻿using Emoji.Wpf;
 using Microsoft.Win32;
 using Shared;
 using System.IO;
@@ -6,15 +6,18 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls; // Namespace cho các control chuẩn WPF
+using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 
 namespace CHAT_WITH_FREND
 {
+    // Cập nhật Class MessageDisplay
     public class MessageDisplay
     {
         public object Content { get; set; }
         public string Timestamp { get; set; }
+        public bool IsMine { get; set; }
+        public string Sender { get; set; } // Thêm Sender để hiển thị dạng tab
     }
 
     public partial class MainWindow : Window
@@ -49,21 +52,10 @@ namespace CHAT_WITH_FREND
         }
 
         // --- XỬ LÝ EMOJI ---
-        //private void ToggleEmoji_Click(object sender, RoutedEventArgs e)
-        //{
-        //    // Đóng/Mở Popup
-        //    EmojiPopup.IsOpen = !EmojiPopup.IsOpen;
-        //}
         private void ToggleEmoji_Click(object sender, RoutedEventArgs e)
         {
-            // Toggle thủ công: nếu đang mở thì đóng, ngược lại mở
             EmojiPopup.IsOpen = !EmojiPopup.IsOpen;
-
-            // Optional: Nếu mở, focus vào Picker để dễ chọn emoji hơn
-            if (EmojiPopup.IsOpen)
-            {
-                EmojiPicker.Focus();
-            }
+            if (EmojiPopup.IsOpen) EmojiPicker.Focus();
         }
 
         private void EmojiPicker_SelectionChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -75,13 +67,9 @@ namespace CHAT_WITH_FREND
                 MessageTextBox.Text = MessageTextBox.Text.Insert(caret, picker.Selection);
                 MessageTextBox.CaretIndex = caret + picker.Selection.Length;
                 MessageTextBox.Focus();
-
-                // Reset lựa chọn
                 picker.Selection = string.Empty;
-
-                // Tùy chọn: Đóng popup sau khi chọn (bỏ comment nếu muốn)
                 EmojiPopup.IsOpen = false;
-            } 
+            }
         }
 
         // --- NHẬN TIN NHẮN ---
@@ -96,6 +84,7 @@ namespace CHAT_WITH_FREND
                     if (read == 0) break;
                     int length = BitConverter.ToInt32(lengthBuffer, 0);
 
+                    // Với file lớn 1GB, cần đọc cẩn thận để tránh lỗi bộ nhớ đệm
                     byte[] buffer = new byte[length];
                     int totalRead = 0;
                     while (totalRead < length)
@@ -157,18 +146,28 @@ namespace CHAT_WITH_FREND
         // --- UI HELPERS ---
         private void AddMessageToUI(string sender, string msg, string time)
         {
-            // Sử dụng Emoji.Wpf.TextBlock để hiển thị icon màu
-            var emojiBlock = new Emoji.Wpf.TextBlock();
-            emojiBlock.Text = $"{sender}: {msg}";
-            emojiBlock.TextWrapping = TextWrapping.Wrap;
-            emojiBlock.FontSize = 15;
+            bool isMine = sender == _username;
+            var emojiBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = msg,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 15
+            };
 
-            MessagesListBox.Items.Add(new MessageDisplay { Content = emojiBlock, Timestamp = time });
+            // Truyền sender vào property Sender riêng để XAML hiển thị trên tab
+            MessagesListBox.Items.Add(new MessageDisplay
+            {
+                Content = emojiBlock,
+                Timestamp = time,
+                IsMine = isMine,
+                Sender = isMine ? "Bạn" : sender
+            });
             ScrollToBottom();
         }
 
         private void AddImageToUI(string sender, byte[] data, string time)
         {
+            bool isMine = sender == _username;
             try
             {
                 BitmapImage bitmap = new BitmapImage();
@@ -181,18 +180,8 @@ namespace CHAT_WITH_FREND
                     bitmap.EndInit();
                 }
 
+                // Không cần add TextBlock tên người gửi vào Panel nữa vì đã có Tab ở trên
                 StackPanel panel = new StackPanel();
-
-                // Sử dụng System.Windows.Controls.TextBlock cho tên người gửi
-                var nameBlock = new System.Windows.Controls.TextBlock
-                {
-                    Text = sender,
-                    FontWeight = FontWeights.Bold,
-                    Margin = new Thickness(0, 0, 0, 5)
-                };
-                panel.Children.Add(nameBlock);
-
-                // Sử dụng System.Windows.Controls.Image cho ảnh
                 var imgControl = new System.Windows.Controls.Image
                 {
                     Source = bitmap,
@@ -200,7 +189,13 @@ namespace CHAT_WITH_FREND
                 };
                 panel.Children.Add(imgControl);
 
-                MessagesListBox.Items.Add(new MessageDisplay { Content = panel, Timestamp = time });
+                MessagesListBox.Items.Add(new MessageDisplay
+                {
+                    Content = panel,
+                    Timestamp = time,
+                    IsMine = isMine,
+                    Sender = isMine ? "Bạn" : sender
+                });
                 ScrollToBottom();
             }
             catch { }
@@ -208,15 +203,8 @@ namespace CHAT_WITH_FREND
 
         private void AddFileToUI(string sender, string fileName, byte[] data, string time)
         {
+            bool isMine = sender == _username;
             StackPanel panel = new StackPanel();
-
-            // Sử dụng System.Windows.Controls.TextBlock
-            var nameBlock = new System.Windows.Controls.TextBlock
-            {
-                Text = sender,
-                FontWeight = FontWeights.Bold
-            };
-            panel.Children.Add(nameBlock);
 
             Button btn = new Button
             {
@@ -224,7 +212,6 @@ namespace CHAT_WITH_FREND
                 Background = System.Windows.Media.Brushes.AliceBlue,
                 Padding = new Thickness(15, 8, 15, 8),
                 Cursor = System.Windows.Input.Cursors.Hand,
-                Margin = new Thickness(0, 5, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Left
             };
 
@@ -233,19 +220,33 @@ namespace CHAT_WITH_FREND
                 SaveFileDialog saveDlg = new SaveFileDialog { FileName = fileName };
                 if (saveDlg.ShowDialog() == true)
                 {
-                    File.WriteAllBytes(saveDlg.FileName, data);
-                    MessageBox.Show("Đã lưu file thành công!");
+                    try
+                    {
+                        File.WriteAllBytes(saveDlg.FileName, data);
+                        MessageBox.Show("Đã lưu file thành công!");
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Lỗi lưu file: " + ex.Message);
+                    }
                 }
             };
             panel.Children.Add(btn);
 
-            MessagesListBox.Items.Add(new MessageDisplay { Content = panel, Timestamp = time });
+            MessagesListBox.Items.Add(new MessageDisplay
+            {
+                Content = panel,
+                Timestamp = time,
+                IsMine = isMine,
+                Sender = isMine ? "Bạn" : sender
+            });
             ScrollToBottom();
         }
 
         // --- GỬI DỮ LIỆU ---
         private void SendButton_Click(object sender, RoutedEventArgs e)
         {
+            // Gửi tin nhắn text
             if (!string.IsNullOrWhiteSpace(MessageTextBox.Text))
             {
                 var packet = new ChatPacket
@@ -260,6 +261,7 @@ namespace CHAT_WITH_FREND
                 MessageTextBox.Text = "";
             }
 
+            // Gửi file đính kèm
             if (_pendingFileData != null)
             {
                 var packet = new ChatPacket
@@ -275,13 +277,16 @@ namespace CHAT_WITH_FREND
                 RemoveAttachment_Click(null, null);
             }
 
-            EmojiPopup.IsOpen = false; // Đóng popup khi gửi
+            EmojiPopup.IsOpen = false;
         }
 
         private void SendPacket(ChatPacket packet)
         {
             try
             {
+                // Lưu ý: Serialize file 1GB sang JSON sẽ tốn rất nhiều RAM (khoảng 3-4GB RAM tạm thời).
+                // Nếu muốn tối ưu hơn phải viết lại logic gửi Stream thay vì JSON, 
+                // nhưng để giữ cấu trúc code cũ thì cách này là nhanh nhất.
                 string json = JsonSerializer.Serialize(packet);
                 byte[] data = Encoding.UTF8.GetBytes(json);
                 byte[] length = BitConverter.GetBytes(data.Length);
@@ -292,41 +297,79 @@ namespace CHAT_WITH_FREND
             }
             catch
             {
-                MessageBox.Show("Mất kết nối với Server!");
+                MessageBox.Show("Mất kết nối hoặc file quá lớn không đủ bộ nhớ!");
                 Close();
             }
         }
 
-        // --- ĐÍNH KÈM FILE/ẢNH ---
+        // --- ĐÍNH KÈM FILE/ẢNH (XỬ LÝ ASYNC ĐỂ HIỆN PROGRESS) ---
         private void AttachImage_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog dlg = new OpenFileDialog { Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp" };
-            if (dlg.ShowDialog() == true) PrepareAttachment(dlg.FileName, PacketType.Image);
+            if (dlg.ShowDialog() == true) _ = PrepareAttachment(dlg.FileName, PacketType.Image);
         }
 
         private void AttachFile_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog dlg = new OpenFileDialog();
-            if (dlg.ShowDialog() == true) PrepareAttachment(dlg.FileName, PacketType.File);
+            if (dlg.ShowDialog() == true) _ = PrepareAttachment(dlg.FileName, PacketType.File);
         }
 
-        private void PrepareAttachment(string path, PacketType type)
+        private async Task PrepareAttachment(string path, PacketType type)
         {
             try
             {
-                byte[] bytes = File.ReadAllBytes(path);
-                if (bytes.Length > 50 * 1024 * 1024) { MessageBox.Show("File > 50MB"); return; }
+                FileInfo fi = new FileInfo(path);
+                // Giới hạn 1GB (1024 * 1024 * 1024)
+                if (fi.Length > 1024L * 1024 * 1024)
+                {
+                    MessageBox.Show("File quá lớn (>1GB).");
+                    return;
+                }
 
-                _pendingFileData = bytes;
+                // Hiển thị UI Progress
+                FileProgressBar.Visibility = Visibility.Visible;
+                FileProgressBar.Value = 0;
+                PreviewBorder.Visibility = Visibility.Visible;
+                PreviewFileName.Text = "Đang đọc file...";
+
+                // Đọc file Async theo từng chunk để cập nhật Progress Bar
+                byte[] data = new byte[fi.Length];
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+                {
+                    long totalBytes = fi.Length;
+                    long totalRead = 0;
+                    byte[] buffer = new byte[81920]; // Đọc mỗi lần 80KB
+                    int read;
+
+                    while ((read = await fs.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        Array.Copy(buffer, 0, data, totalRead, read);
+                        totalRead += read;
+
+                        // Cập nhật thanh tiến trình
+                        double percent = (double)totalRead / totalBytes * 100;
+                        FileProgressBar.Value = percent;
+                    }
+                }
+
+                _pendingFileData = data;
                 _pendingFileName = System.IO.Path.GetFileName(path);
                 _pendingType = type;
+
+                // Ẩn Progress Bar khi xong
+                FileProgressBar.Visibility = Visibility.Collapsed;
 
                 if (type == PacketType.Image)
                 {
                     BitmapImage bitmap = new BitmapImage();
-                    using (var mem = new MemoryStream(bytes))
+                    using (var mem = new MemoryStream(_pendingFileData))
                     {
-                        mem.Position = 0; bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.StreamSource = mem; bitmap.EndInit();
+                        mem.Position = 0;
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.StreamSource = mem;
+                        bitmap.EndInit();
                     }
                     PreviewImage.Source = bitmap;
                     PreviewImage.Visibility = Visibility.Visible;
@@ -335,11 +378,19 @@ namespace CHAT_WITH_FREND
                 else
                 {
                     PreviewImage.Visibility = Visibility.Collapsed;
-                    PreviewFileName.Text = $"📄 {_pendingFileName}";
+                    PreviewFileName.Text = $"📄 {_pendingFileName} ({(fi.Length / 1024.0 / 1024.0):F2} MB)";
                 }
-                PreviewBorder.Visibility = Visibility.Visible;
             }
-            catch (Exception ex) { MessageBox.Show("Lỗi đọc file: " + ex.Message); }
+            catch (OutOfMemoryException)
+            {
+                MessageBox.Show("Không đủ bộ nhớ RAM để load file này!");
+                RemoveAttachment_Click(null, null);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi đọc file: " + ex.Message);
+                RemoveAttachment_Click(null, null);
+            }
         }
 
         private void RemoveAttachment_Click(object sender, RoutedEventArgs e)
@@ -347,6 +398,7 @@ namespace CHAT_WITH_FREND
             _pendingFileData = null;
             _pendingFileName = "";
             PreviewBorder.Visibility = Visibility.Collapsed;
+            FileProgressBar.Visibility = Visibility.Collapsed;
         }
 
         // --- SỰ KIỆN KHÁC ---
@@ -370,4 +422,3 @@ namespace CHAT_WITH_FREND
         }
     }
 }
-
