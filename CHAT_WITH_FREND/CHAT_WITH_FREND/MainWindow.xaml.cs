@@ -1,6 +1,7 @@
 ﻿using Emoji.Wpf;
 using Microsoft.Win32;
 using Shared;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -11,13 +12,25 @@ using System.Windows.Media.Imaging;
 
 namespace CHAT_WITH_FREND
 {
-    // Cập nhật Class MessageDisplay
     public class MessageDisplay
     {
-        public object Content { get; set; }
-        public string Timestamp { get; set; }
+        public object Content { get; set; } = null!;
+        public string Timestamp { get; set; } = "";
         public bool IsMine { get; set; }
-        public string Sender { get; set; } // Thêm Sender để hiển thị dạng tab
+        public string Sender { get; set; } = "";
+    }
+
+    // Class lưu trạng thái nhận file chunked
+    public class IncomingFileTransfer
+    {
+        public string FileId { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string Sender { get; set; } = "";
+        public int TotalChunks { get; set; }
+        public long TotalSize { get; set; }
+        public int ReceivedChunks { get; set; }
+        public MemoryStream DataStream { get; set; } = new();
+        public DateTime StartTime { get; set; } = DateTime.Now;
     }
 
     public partial class MainWindow : Window
@@ -27,9 +40,15 @@ namespace CHAT_WITH_FREND
         private string _username;
         private string _targetUser = "ALL";
 
-        private byte[] _pendingFileData = null;
+        private byte[]? _pendingFileData = null;
         private string _pendingFileName = "";
         private PacketType _pendingType = PacketType.Message;
+
+        // Lưu trữ file đang nhận (chunked)
+        private ConcurrentDictionary<string, IncomingFileTransfer> _incomingFiles = new();
+
+        // Flag đang gửi file
+        private bool _isSendingFile = false;
 
         public MainWindow(TcpClient client, string username, string serverIP)
         {
@@ -61,7 +80,7 @@ namespace CHAT_WITH_FREND
         private void EmojiPicker_SelectionChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             var picker = sender as Emoji.Wpf.Picker;
-            if (!string.IsNullOrEmpty(picker.Selection))
+            if (!string.IsNullOrEmpty(picker?.Selection))
             {
                 int caret = MessageTextBox.CaretIndex;
                 MessageTextBox.Text = MessageTextBox.Text.Insert(caret, picker.Selection);
@@ -84,7 +103,6 @@ namespace CHAT_WITH_FREND
                     if (read == 0) break;
                     int length = BitConverter.ToInt32(lengthBuffer, 0);
 
-                    // Với file lớn 1GB, cần đọc cẩn thận để tránh lỗi bộ nhớ đệm
                     byte[] buffer = new byte[length];
                     int totalRead = 0;
                     while (totalRead < length)
@@ -118,7 +136,7 @@ namespace CHAT_WITH_FREND
                 case PacketType.UserList:
                     if (packet.Message != null)
                     {
-                        var users = JsonSerializer.Deserialize<List<string>>(packet.Message.ToString());
+                        var users = JsonSerializer.Deserialize<List<string>>(packet.Message);
                         var displayList = new List<string> { "Chat Nhóm" };
                         if (users != null)
                         {
@@ -134,13 +152,247 @@ namespace CHAT_WITH_FREND
                     break;
 
                 case PacketType.Image:
-                    AddImageToUI(packet.Sender, packet.FileData, timeStr);
+                    if (packet.FileData != null)
+                        AddImageToUI(packet.Sender, packet.FileData, timeStr);
                     break;
 
                 case PacketType.File:
-                    AddFileToUI(packet.Sender, packet.FileName, packet.FileData, timeStr);
+                    if (packet.FileData != null)
+                        AddFileToUI(packet.Sender, packet.FileName, packet.FileData, timeStr);
+                    break;
+
+                // ===== CHUNKED FILE TRANSFER =====
+                case PacketType.FileStart:
+                    HandleIncomingFileStart(packet);
+                    break;
+
+                case PacketType.FileChunk:
+                    HandleIncomingFileChunk(packet);
+                    break;
+
+                case PacketType.FileEnd:
+                    HandleIncomingFileEnd(packet, timeStr);
                     break;
             }
+        }
+
+        // ===== XỬ LÝ NHẬN FILE CHUNKED =====
+        private void HandleIncomingFileStart(ChatPacket packet)
+        {
+            if (packet.Sender == _username) return;
+
+            var transfer = new IncomingFileTransfer
+            {
+                FileId = packet.FileId,
+                FileName = packet.FileName,
+                Sender = packet.Sender,
+                TotalChunks = packet.TotalChunks,
+                TotalSize = packet.TotalFileSize,
+                ReceivedChunks = 0,
+                DataStream = new MemoryStream(),
+                StartTime = DateTime.Now
+            };
+
+            _incomingFiles[packet.FileId] = transfer;
+
+            AddSystemMessage($"📥 {packet.Sender} đang gửi file '{packet.FileName}' ({FormatSize(packet.TotalFileSize)})...");
+
+            FileProgressBar.Visibility = Visibility.Visible;
+            FileProgressBar.Value = 0;
+            PreviewBorder.Visibility = Visibility.Visible;
+            PreviewImage.Visibility = Visibility.Collapsed;
+            PreviewFileName.Text = $"📥 Đang nhận: {packet.FileName} (0%)";
+        }
+
+        private void HandleIncomingFileChunk(ChatPacket packet)
+        {
+            if (packet.Sender == _username) return;
+
+            if (_incomingFiles.TryGetValue(packet.FileId, out var transfer))
+            {
+                if (packet.FileData != null)
+                {
+                    transfer.DataStream.Write(packet.FileData, 0, packet.FileData.Length);
+                    transfer.ReceivedChunks++;
+
+                    double progress = (double)transfer.ReceivedChunks / transfer.TotalChunks * 100;
+                    FileProgressBar.Value = progress;
+                    PreviewFileName.Text = $"📥 Đang nhận: {transfer.FileName} ({progress:F0}%)";
+                }
+            }
+        }
+
+        private void HandleIncomingFileEnd(ChatPacket packet, string timeStr)
+        {
+            if (packet.Sender == _username) return;
+
+            if (_incomingFiles.TryRemove(packet.FileId, out var transfer))
+            {
+                byte[] fileData = transfer.DataStream.ToArray();
+                transfer.DataStream.Dispose();
+
+                FileProgressBar.Visibility = Visibility.Collapsed;
+                PreviewBorder.Visibility = Visibility.Collapsed;
+
+                string ext = Path.GetExtension(transfer.FileName).ToLower();
+                bool isImage = ext is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif";
+
+                if (isImage)
+                {
+                    AddImageToUI(transfer.Sender, fileData, timeStr);
+                }
+                else
+                {
+                    AddFileToUI(transfer.Sender, transfer.FileName, fileData, timeStr);
+                }
+
+                var elapsed = DateTime.Now - transfer.StartTime;
+                AddSystemMessage($"✅ Đã nhận file '{transfer.FileName}' từ {transfer.Sender} ({FormatSize(fileData.Length)}) trong {elapsed.TotalSeconds:F1}s");
+            }
+        }
+
+        // ===== GỬI FILE LỚN VỚI CHUNKED TRANSFER =====
+        private async Task SendLargeFileAsync(string filePath, PacketType fileType)
+        {
+            if (_isSendingFile)
+            {
+                MessageBox.Show("Đang gửi file khác, vui lòng đợi!");
+                return;
+            }
+
+            FileInfo fileInfo = new FileInfo(filePath);
+            if (fileInfo.Length > FileTransferConfig.MaxFileSize)
+            {
+                MessageBox.Show($"File quá lớn! Giới hạn: {FormatSize(FileTransferConfig.MaxFileSize)}");
+                return;
+            }
+
+            _isSendingFile = true;
+            string fileId = Guid.NewGuid().ToString();
+            string fileName = Path.GetFileName(filePath);
+            int totalChunks = (int)Math.Ceiling((double)fileInfo.Length / FileTransferConfig.ChunkSize);
+
+            try
+            {
+                FileProgressBar.Visibility = Visibility.Visible;
+                FileProgressBar.Value = 0;
+                PreviewBorder.Visibility = Visibility.Visible;
+                PreviewImage.Visibility = Visibility.Collapsed;
+                PreviewFileName.Text = $"📤 Đang gửi: {fileName} (0%)";
+
+                // 1. Gửi FileStart
+                var startPacket = new ChatPacket
+                {
+                    Type = PacketType.FileStart,
+                    Sender = _username,
+                    Target = _targetUser,
+                    FileName = fileName,
+                    FileId = fileId,
+                    TotalChunks = totalChunks,
+                    TotalFileSize = fileInfo.Length,
+                    Time = DateTime.Now
+                };
+                SendPacket(startPacket);
+
+                // 2. Đọc và gửi từng chunk
+                await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    bufferSize: FileTransferConfig.ChunkSize, useAsync: true);
+
+                byte[] buffer = new byte[FileTransferConfig.ChunkSize];
+                int chunkIndex = 0;
+                int bytesRead;
+
+                while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    byte[] chunkData = bytesRead == buffer.Length
+                        ? buffer.ToArray()
+                        : buffer[..bytesRead];
+
+                    var chunkPacket = new ChatPacket
+                    {
+                        Type = PacketType.FileChunk,
+                        Sender = _username,
+                        Target = _targetUser,
+                        FileId = fileId,
+                        ChunkIndex = chunkIndex,
+                        TotalChunks = totalChunks,
+                        FileData = chunkData,
+                        Time = DateTime.Now
+                    };
+                    SendPacket(chunkPacket);
+
+                    chunkIndex++;
+
+                    double progress = (double)chunkIndex / totalChunks * 100;
+                    FileProgressBar.Value = progress;
+                    PreviewFileName.Text = $"📤 Đang gửi: {fileName} ({progress:F0}%)";
+
+                    // Cho phép UI cập nhật
+                    await Task.Delay(1);
+                }
+
+                // 3. Gửi FileEnd
+                var endPacket = new ChatPacket
+                {
+                    Type = PacketType.FileEnd,
+                    Sender = _username,
+                    Target = _targetUser,
+                    FileId = fileId,
+                    FileName = fileName,
+                    TotalFileSize = fileInfo.Length,
+                    Time = DateTime.Now
+                };
+                SendPacket(endPacket);
+
+                AddSystemMessage($"✅ Đã gửi file '{fileName}' ({FormatSize(fileInfo.Length)})");
+
+                FileProgressBar.Visibility = Visibility.Collapsed;
+                PreviewBorder.Visibility = Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Lỗi gửi file: {ex.Message}");
+                FileProgressBar.Visibility = Visibility.Collapsed;
+                PreviewBorder.Visibility = Visibility.Collapsed;
+            }
+            finally
+            {
+                _isSendingFile = false;
+            }
+        }
+
+        private void AddSystemMessage(string message)
+        {
+            var textBlock = new System.Windows.Controls.TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 13,
+                Foreground = System.Windows.Media.Brushes.Gray,
+                FontStyle = FontStyles.Italic
+            };
+
+            MessagesListBox.Items.Add(new MessageDisplay
+            {
+                Content = textBlock,
+                Timestamp = DateTime.Now.ToString("HH:mm"),
+                IsMine = false,
+                Sender = "System"
+            });
+            ScrollToBottom();
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            string[] sizes = ["B", "KB", "MB", "GB"];
+            double len = bytes;
+            int order = 0;
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len /= 1024;
+            }
+            return $"{len:F2} {sizes[order]}";
         }
 
         // --- UI HELPERS ---
@@ -154,7 +406,6 @@ namespace CHAT_WITH_FREND
                 FontSize = 15
             };
 
-            // Truyền sender vào property Sender riêng để XAML hiển thị trên tab
             MessagesListBox.Items.Add(new MessageDisplay
             {
                 Content = emojiBlock,
@@ -180,7 +431,6 @@ namespace CHAT_WITH_FREND
                     bitmap.EndInit();
                 }
 
-                // Không cần add TextBlock tên người gửi vào Panel nữa vì đã có Tab ở trên
                 StackPanel panel = new StackPanel();
                 var imgControl = new System.Windows.Controls.Image
                 {
@@ -208,7 +458,7 @@ namespace CHAT_WITH_FREND
 
             Button btn = new Button
             {
-                Content = $"📂 Tải xuống: {fileName}",
+                Content = $"📂 Tải xuống: {fileName} ({FormatSize(data.Length)})",
                 Background = System.Windows.Media.Brushes.AliceBlue,
                 Padding = new Thickness(15, 8, 15, 8),
                 Cursor = System.Windows.Input.Cursors.Hand,
@@ -246,7 +496,6 @@ namespace CHAT_WITH_FREND
         // --- GỬI DỮ LIỆU ---
         private void SendButton_Click(object sender, RoutedEventArgs e)
         {
-            // Gửi tin nhắn text
             if (!string.IsNullOrWhiteSpace(MessageTextBox.Text))
             {
                 var packet = new ChatPacket
@@ -261,7 +510,7 @@ namespace CHAT_WITH_FREND
                 MessageTextBox.Text = "";
             }
 
-            // Gửi file đính kèm
+            // Gửi file nhỏ (legacy - dưới 5MB)
             if (_pendingFileData != null)
             {
                 var packet = new ChatPacket
@@ -284,9 +533,6 @@ namespace CHAT_WITH_FREND
         {
             try
             {
-                // Lưu ý: Serialize file 1GB sang JSON sẽ tốn rất nhiều RAM (khoảng 3-4GB RAM tạm thời).
-                // Nếu muốn tối ưu hơn phải viết lại logic gửi Stream thay vì JSON, 
-                // nhưng để giữ cấu trúc code cũ thì cách này là nhanh nhất.
                 string json = JsonSerializer.Serialize(packet);
                 byte[] data = Encoding.UTF8.GetBytes(json);
                 byte[] length = BitConverter.GetBytes(data.Length);
@@ -297,22 +543,46 @@ namespace CHAT_WITH_FREND
             }
             catch
             {
-                MessageBox.Show("Mất kết nối hoặc file quá lớn không đủ bộ nhớ!");
+                MessageBox.Show("Mất kết nối!");
                 Close();
             }
         }
 
-        // --- ĐÍNH KÈM FILE/ẢNH (XỬ LÝ ASYNC ĐỂ HIỆN PROGRESS) ---
+        // --- ĐÍNH KÈM FILE/ẢNH ---
         private void AttachImage_Click(object sender, RoutedEventArgs e)
         {
-            OpenFileDialog dlg = new OpenFileDialog { Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp" };
-            if (dlg.ShowDialog() == true) _ = PrepareAttachment(dlg.FileName, PacketType.Image);
+            OpenFileDialog dlg = new OpenFileDialog { Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp;*.gif" };
+            if (dlg.ShowDialog() == true)
+            {
+                FileInfo fi = new FileInfo(dlg.FileName);
+                // File > 5MB -> dùng chunked transfer
+                if (fi.Length > 5 * 1024 * 1024)
+                {
+                    _ = SendLargeFileAsync(dlg.FileName, PacketType.Image);
+                }
+                else
+                {
+                    _ = PrepareAttachment(dlg.FileName, PacketType.Image);
+                }
+            }
         }
 
         private void AttachFile_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog dlg = new OpenFileDialog();
-            if (dlg.ShowDialog() == true) _ = PrepareAttachment(dlg.FileName, PacketType.File);
+            if (dlg.ShowDialog() == true)
+            {
+                FileInfo fi = new FileInfo(dlg.FileName);
+                // File > 5MB -> dùng chunked transfer
+                if (fi.Length > 5 * 1024 * 1024)
+                {
+                    _ = SendLargeFileAsync(dlg.FileName, PacketType.File);
+                }
+                else
+                {
+                    _ = PrepareAttachment(dlg.FileName, PacketType.File);
+                }
+            }
         }
 
         private async Task PrepareAttachment(string path, PacketType type)
@@ -320,26 +590,18 @@ namespace CHAT_WITH_FREND
             try
             {
                 FileInfo fi = new FileInfo(path);
-                // Giới hạn 1GB (1024 * 1024 * 1024)
-                if (fi.Length > 1024L * 1024 * 1024)
-                {
-                    MessageBox.Show("File quá lớn (>1GB).");
-                    return;
-                }
 
-                // Hiển thị UI Progress
                 FileProgressBar.Visibility = Visibility.Visible;
                 FileProgressBar.Value = 0;
                 PreviewBorder.Visibility = Visibility.Visible;
                 PreviewFileName.Text = "Đang đọc file...";
 
-                // Đọc file Async theo từng chunk để cập nhật Progress Bar
                 byte[] data = new byte[fi.Length];
                 using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
                 {
                     long totalBytes = fi.Length;
                     long totalRead = 0;
-                    byte[] buffer = new byte[81920]; // Đọc mỗi lần 80KB
+                    byte[] buffer = new byte[81920];
                     int read;
 
                     while ((read = await fs.ReadAsync(buffer, 0, buffer.Length)) > 0)
@@ -347,17 +609,15 @@ namespace CHAT_WITH_FREND
                         Array.Copy(buffer, 0, data, totalRead, read);
                         totalRead += read;
 
-                        // Cập nhật thanh tiến trình
                         double percent = (double)totalRead / totalBytes * 100;
                         FileProgressBar.Value = percent;
                     }
                 }
 
                 _pendingFileData = data;
-                _pendingFileName = System.IO.Path.GetFileName(path);
+                _pendingFileName = Path.GetFileName(path);
                 _pendingType = type;
 
-                // Ẩn Progress Bar khi xong
                 FileProgressBar.Visibility = Visibility.Collapsed;
 
                 if (type == PacketType.Image)
@@ -378,13 +638,8 @@ namespace CHAT_WITH_FREND
                 else
                 {
                     PreviewImage.Visibility = Visibility.Collapsed;
-                    PreviewFileName.Text = $"📄 {_pendingFileName} ({(fi.Length / 1024.0 / 1024.0):F2} MB)";
+                    PreviewFileName.Text = $"📄 {_pendingFileName} ({FormatSize(fi.Length)})";
                 }
-            }
-            catch (OutOfMemoryException)
-            {
-                MessageBox.Show("Không đủ bộ nhớ RAM để load file này!");
-                RemoveAttachment_Click(null, null);
             }
             catch (Exception ex)
             {
@@ -393,7 +648,7 @@ namespace CHAT_WITH_FREND
             }
         }
 
-        private void RemoveAttachment_Click(object sender, RoutedEventArgs e)
+        private void RemoveAttachment_Click(object? sender, RoutedEventArgs? e)
         {
             _pendingFileData = null;
             _pendingFileName = "";
@@ -405,14 +660,14 @@ namespace CHAT_WITH_FREND
         private void UserListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (UserListBox.SelectedItem == null) return;
-            string selected = UserListBox.SelectedItem.ToString();
-            _targetUser = (selected == "Chat Nhóm") ? "ALL" : selected;
+            string? selected = UserListBox.SelectedItem.ToString();
+            _targetUser = (selected == "Chat Nhóm") ? "ALL" : selected ?? "ALL";
             ChatTitleText.Text = (selected == "Chat Nhóm") ? "Chat Nhóm" : $"Chat riêng: {selected}";
         }
 
         private void MessageTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
-            if (e.Key == System.Windows.Input.Key.Enter) SendButton_Click(null, null);
+            if (e.Key == System.Windows.Input.Key.Enter) SendButton_Click(null!, null!);
         }
 
         private void ScrollToBottom()
