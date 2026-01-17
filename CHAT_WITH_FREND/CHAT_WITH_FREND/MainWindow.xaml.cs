@@ -19,7 +19,7 @@ namespace CHAT_WITH_FREND
         public MainWindow()
         {
             InitializeComponent();
-            _clientName = $"Client_{Environment.MachineName}_{DateTime.Now:HHmmss}";
+            _clientName = "LÊ Nguyên";
             Title = $"Chat Client - {_clientName}";
             
             SendButton.IsEnabled = false;
@@ -154,8 +154,6 @@ namespace CHAT_WITH_FREND
             MessageTextBox.CaretIndex = caretIndex + emoji.Length;
             MessageTextBox.Focus();
             
-            // Tự động đóng emoji panel sau khi chọn (tùy chọn - có thể comment nếu muốn giữ panel mở)
-            // EmojiPanel.Visibility = Visibility.Collapsed;
         }
 
         private async void ConnectButton_Click(object sender, RoutedEventArgs e)
